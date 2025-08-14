@@ -1,0 +1,318 @@
+From 66a5b93dee386bc2f57033a150341752923b8b41 Mon Sep 17 00:00:00 2001
+From: Gerard Garcia <ggarcia@deic.uab.cat>
+Date: Tue, 14 Jun 2016 16:45:44 +0200
+Subject: [PATCH 13/13] Add printing support for vsockmon devices.
+
+Print Linux 4.12 vsockmon captures:
+
+  # modprobe vsockmon
+  # ip link add type vsockmon
+  # ip link set vsockmon0 up
+  # tcpdump -i vsockmon0
+  16:25:24.987917 VIRTIO 3.1025 > 2.1234 CONNECT, length 76
+  16:25:24.987963 VIRTIO 2.1234 > 3.1025 CONNECT, length 76
+  16:25:26.568271 VIRTIO 3.1025 > 2.1234 PAYLOAD, length 82
+  16:25:26.568512 VIRTIO 2.1234 > 3.1025 CONTROL, length 76
+  16:25:28.411335 VIRTIO 3.1025 > 2.1234 DISCONNECT, length 76
+  16:25:28.411628 VIRTIO 2.1234 > 3.1025 DISCONNECT, length 76
+
+For more information about vsock see:
+http://wiki.qemu.org/Features/VirtioVsock
+---
+ Makefile.in   |   1 +
+ netdissect.h  |   1 +
+ print-vsock.c | 243 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ print.c       |   3 +
+ 4 files changed, 248 insertions(+)
+ create mode 100644 print-vsock.c
+
+diff --git a/Makefile.in b/Makefile.in
+index 0941f0e..a301878 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -226,6 +226,7 @@ LIBNETDISSECT_SRC=\
+ 	print-vjc.c \
+ 	print-vqp.c \
+ 	print-vrrp.c \
++	print-vsock.c \
+ 	print-vtp.c \
+ 	print-vxlan.c \
+ 	print-vxlan-gpe.c \
+diff --git a/netdissect.h b/netdissect.h
+index 089b040..c89fcf1 100644
+--- a/netdissect.h
++++ b/netdissect.h
+@@ -444,6 +444,7 @@ extern u_int symantec_if_print IF_PRINTER_ARGS;
+ extern u_int token_if_print IF_PRINTER_ARGS;
+ extern u_int usb_linux_48_byte_print IF_PRINTER_ARGS;
+ extern u_int usb_linux_64_byte_print IF_PRINTER_ARGS;
++extern u_int vsock_print IF_PRINTER_ARGS;
+ 
+ /*
+  * Structure passed to some printers to allow them to print
+diff --git a/print-vsock.c b/print-vsock.c
+new file mode 100644
+index 0000000..fc5694d
+--- /dev/null
++++ b/print-vsock.c
+@@ -0,0 +1,243 @@
++/*
++ * Copyright (c) 2016 Gerard Garcia <nouboh@gmail.com>
++ * Copyright (c) 2017 Red Hat, Inc.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ *
++ *   1. Redistributions of source code must retain the above copyright
++ *      notice, this list of conditions and the following disclaimer.
++ *   2. Redistributions in binary form must reproduce the above copyright
++ *      notice, this list of conditions and the following disclaimer in
++ *      the documentation and/or other materials provided with the
++ *      distribution.
++ *   3. The names of the authors may not be used to endorse or promote
++ *      products derived from this software without specific prior
++ *      written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
++ * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
++ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
++ */
++
++/* \summary: Linux vsock printer */
++
++#ifdef HAVE_CONFIG_H
++#include "config.h"
++#endif
++
++#include <netdissect-stdinc.h>
++#include <stddef.h>
++
++#include "netdissect.h"
++#include "extract.h"
++
++static const char tstr[] = " [|vsock]";
++
++enum af_vsockmon_transport {
++	AF_VSOCK_TRANSPORT_UNKNOWN = 0,
++	AF_VSOCK_TRANSPORT_NO_INFO = 1,		/* No transport information */
++	AF_VSOCK_TRANSPORT_VIRTIO = 2,		/* Virtio transport header */
++};
++
++static const struct tok vsock_transport[] = {
++	{AF_VSOCK_TRANSPORT_UNKNOWN, "UNKNOWN"},
++	{AF_VSOCK_TRANSPORT_NO_INFO, "NO_INFO"},
++	{AF_VSOCK_TRANSPORT_VIRTIO, "VIRTIO"},
++	{ 0, NULL }
++};
++
++enum af_vsockmon_op {
++	AF_VSOCK_OP_UNKNOWN = 0,
++	AF_VSOCK_OP_CONNECT = 1,
++	AF_VSOCK_OP_DISCONNECT = 2,
++	AF_VSOCK_OP_CONTROL = 3,
++	AF_VSOCK_OP_PAYLOAD = 4,
++};
++
++static const struct tok vsock_op[] = {
++	{AF_VSOCK_OP_UNKNOWN, "UNKNOWN"},
++	{AF_VSOCK_OP_CONNECT, "CONNECT"},
++	{AF_VSOCK_OP_DISCONNECT, "DISCONNECT"},
++	{AF_VSOCK_OP_CONTROL, "CONTROL"},
++	{AF_VSOCK_OP_PAYLOAD, "PAYLOAD"},
++	{ 0, NULL }
++};
++
++enum virtio_vsock_type {
++	VIRTIO_VSOCK_TYPE_STREAM = 1,
++};
++
++static const struct tok virtio_type[] = {
++	{VIRTIO_VSOCK_TYPE_STREAM, "STREAM"},
++	{ 0, NULL }
++};
++
++enum virtio_vsock_op {
++	VIRTIO_VSOCK_OP_INVALID = 0,
++	VIRTIO_VSOCK_OP_REQUEST = 1,
++	VIRTIO_VSOCK_OP_RESPONSE = 2,
++	VIRTIO_VSOCK_OP_RST = 3,
++	VIRTIO_VSOCK_OP_SHUTDOWN = 4,
++	VIRTIO_VSOCK_OP_RW = 5,
++	VIRTIO_VSOCK_OP_CREDIT_UPDATE = 6,
++	VIRTIO_VSOCK_OP_CREDIT_REQUEST = 7,
++};
++
++static const struct tok virtio_op[] = {
++	{VIRTIO_VSOCK_OP_INVALID, "INVALID"},
++	{VIRTIO_VSOCK_OP_REQUEST, "REQUEST"},
++	{VIRTIO_VSOCK_OP_RESPONSE, "RESPONSE"},
++	{VIRTIO_VSOCK_OP_RST, "RST"},
++	{VIRTIO_VSOCK_OP_SHUTDOWN, "SHUTDOWN"},
++	{VIRTIO_VSOCK_OP_RW, "RW"},
++	{VIRTIO_VSOCK_OP_CREDIT_UPDATE, "CREDIT UPDATE"},
++	{VIRTIO_VSOCK_OP_CREDIT_REQUEST, "CREDIT REQUEST"},
++	{ 0, NULL }
++};
++
++/* All fields are little-endian */
++
++struct virtio_vsock_hdr {
++	uint64_t	src_cid;
++	uint64_t	dst_cid;
++	uint32_t	src_port;
++	uint32_t	dst_port;
++	uint32_t	len;
++	uint16_t	type;		/* enum virtio_vsock_type */
++	uint16_t	op;		/* enum virtio_vsock_op */
++	uint32_t	flags;
++	uint32_t	buf_alloc;
++	uint32_t	fwd_cnt;
++} UNALIGNED;
++
++struct af_vsockmon_hdr {
++	uint64_t src_cid;
++	uint64_t dst_cid;
++	uint32_t src_port;
++	uint32_t dst_port;
++	uint16_t op;		/* enum af_vsockmon_op */
++	uint16_t transport;	/* enum af_vosckmon_transport */
++	uint16_t len;		/* size of transport header */
++	uint8_t reserved[2];
++};
++
++static void
++vsock_virtio_hdr_print(netdissect_options *ndo, const struct virtio_vsock_hdr *hdr)
++{
++	uint16_t u16_v;
++	uint32_t u32_v;
++
++	u32_v = EXTRACT_LE_32BITS(&hdr->len);
++	ND_PRINT((ndo, "len %u", u32_v));
++
++	u16_v = EXTRACT_LE_16BITS(&hdr->type);
++	ND_PRINT((ndo, ", type %s",
++		  tok2str(virtio_type, "Invalid type (%hu)", u16_v)));
++
++	u16_v = EXTRACT_LE_16BITS(&hdr->op);
++	ND_PRINT((ndo, ", op %s",
++		  tok2str(virtio_op, "Invalid op (%hu)", u16_v)));
++
++	u32_v = EXTRACT_LE_32BITS(&hdr->flags);
++	ND_PRINT((ndo, ", flags %x", u32_v));
++
++	u32_v = EXTRACT_LE_32BITS(&hdr->buf_alloc);
++	ND_PRINT((ndo, ", buf_alloc %u", u32_v));
++
++	u32_v = EXTRACT_LE_32BITS(&hdr->fwd_cnt);
++	ND_PRINT((ndo, ", fwd_cnt %u", u32_v));
++}
++
++static size_t
++vsock_transport_hdr_size(uint16_t transport)
++{
++	switch (transport) {
++		case AF_VSOCK_TRANSPORT_VIRTIO:
++			return sizeof(struct virtio_vsock_hdr);
++		default:
++			return 0;
++	}
++}
++
++static void
++vsock_transport_hdr_print(netdissect_options *ndo, uint16_t transport,
++                          const u_char *p, const u_int len)
++{
++	size_t transport_size = vsock_transport_hdr_size(transport);
++	const void *hdr;
++
++	if (len < sizeof(struct af_vsockmon_hdr) + transport_size)
++		return;
++
++	hdr = p + sizeof(struct af_vsockmon_hdr);
++	switch (transport) {
++		case AF_VSOCK_TRANSPORT_VIRTIO:
++			ND_PRINT((ndo, " ("));
++			vsock_virtio_hdr_print(ndo, hdr);
++			ND_PRINT((ndo, ")"));
++			break;
++		default:
++			break;
++	}
++}
++
++static void
++vsock_hdr_print(netdissect_options *ndo, const u_char *p, const u_int len)
++{
++	uint16_t hdr_transport, hdr_op;
++	uint32_t hdr_src_port, hdr_dst_port;
++	uint64_t hdr_src_cid, hdr_dst_cid;
++	size_t total_hdr_size;
++
++	const struct af_vsockmon_hdr *hdr = (struct af_vsockmon_hdr *)p;
++
++	hdr_transport = EXTRACT_LE_16BITS(&hdr->transport);
++	ND_PRINT((ndo, "%s",
++		  tok2str(vsock_transport, "Invalid transport (%u)",
++			  hdr_transport)));
++
++	/* If verbose level is more than 0 print transport details */
++	if (ndo->ndo_vflag) {
++		vsock_transport_hdr_print(ndo, hdr_transport, p, len);
++		ND_PRINT((ndo, "\n\t"));
++	} else
++		ND_PRINT((ndo, " "));
++
++	hdr_src_cid = EXTRACT_LE_64BITS(&hdr->src_cid);
++	hdr_dst_cid = EXTRACT_LE_64BITS(&hdr->dst_cid);
++	hdr_src_port = EXTRACT_LE_32BITS(&hdr->src_port);
++	hdr_dst_port = EXTRACT_LE_32BITS(&hdr->dst_port);
++	hdr_op = EXTRACT_LE_16BITS(&hdr->op);
++	ND_PRINT((ndo, "%lu.%hu > %lu.%hu %s, length %u",
++		  hdr_src_cid, hdr_src_port,
++		  hdr_dst_cid, hdr_dst_port,
++		  tok2str(vsock_op, " invalid op (%u)", hdr_op),
++		  len));
++
++	/* If debug level is more than 1 print payload contents */
++	total_hdr_size = sizeof(struct af_vsockmon_hdr) +
++			 vsock_transport_hdr_size(hdr_transport);
++	if (ndo->ndo_vflag > 1 &&
++	    hdr_op == AF_VSOCK_OP_PAYLOAD &&
++	    len > total_hdr_size) {
++		const u_char *payload = p + total_hdr_size;
++
++		ND_PRINT((ndo, "\n"));
++		print_unknown_data(ndo, payload, "\t", len - total_hdr_size);
++	}
++}
++
++u_int
++vsock_print(netdissect_options *ndo, const struct pcap_pkthdr *h, const u_char *cp)
++{
++	u_int len = h->len;
++
++	if (len < sizeof(struct af_vsockmon_hdr))
++		ND_PRINT((ndo, "%s", tstr));
++	else
++		vsock_hdr_print(ndo, cp, len);
++
++	return len;
++}
+diff --git a/print.c b/print.c
+index c76f344..1945cfd 100644
+--- a/print.c
++++ b/print.c
+@@ -220,6 +220,9 @@ static const struct printer printers[] = {
+ #ifdef DLT_PPP_SERIAL
+ 	{ ppp_hdlc_if_print,	DLT_PPP_SERIAL },
+ #endif
++#ifdef DLT_VSOCK
++	{ vsock_print,		DLT_VSOCK },
++#endif
+ 	{ NULL,			0 },
+ };
+ 
+-- 
+2.13.5
+

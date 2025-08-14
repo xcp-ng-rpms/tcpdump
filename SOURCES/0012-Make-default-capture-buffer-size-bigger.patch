@@ -1,0 +1,39 @@
+From 41d5020151d21ff0609a4c4173ef2a8ae41f754d Mon Sep 17 00:00:00 2001
+From: rpm-build <rpm-build>
+Date: Tue, 9 May 2017 10:17:42 +0200
+Subject: [PATCH 12/13] Make default capture buffer size bigger.
+
+---
+ tcpdump.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/tcpdump.c b/tcpdump.c
+index d7b094b..a54a42c 100644
+--- a/tcpdump.c
++++ b/tcpdump.c
+@@ -130,6 +130,7 @@ The Regents of the University of California.  All rights reserved.\n";
+ #endif
+ 
+ static int Bflag;			/* buffer size */
++#define DEFAULT_CAPTURE_BUFFER_SIZE 4*1024*1024
+ static long Cflag;			/* rotate dump files after this many bytes */
+ static int Cflag_count;			/* Keep track of which file number we're writing */
+ static int Dflag;			/* list available devices and exit */
+@@ -1011,7 +1012,13 @@ open_interface(const char *device, netdissect_options *ndo, char *ebuf)
+ 		if (status != 0)
+ 			error("%s: Can't set buffer size: %s",
+ 			    device, pcap_statustostr(status));
+-	}
++	} else {
++                Bflag = DEFAULT_CAPTURE_BUFFER_SIZE;
++		status = pcap_set_buffer_size(pc, Bflag);
++		if (status != 0)
++                        fprintf(stderr, "Can't set buffer size to %d, using system default.\n", DEFAULT_CAPTURE_BUFFER_SIZE);
++        }
++
+ #ifdef HAVE_PCAP_SET_TSTAMP_TYPE
+ 	if (jflag != -1) {
+ 		status = pcap_set_tstamp_type(pc, jflag);
+-- 
+2.13.5
+

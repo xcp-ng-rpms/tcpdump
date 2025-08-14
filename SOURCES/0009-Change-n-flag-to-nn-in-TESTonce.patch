@@ -1,0 +1,27 @@
+From 04e23aa3f91ff137237daf68f02e7b3c0c1a9168 Mon Sep 17 00:00:00 2001
+From: rpm-build <rpm-build>
+Date: Tue, 11 Apr 2017 09:19:48 +0200
+Subject: [PATCH 09/13] Change -n flag to -nn in TESTonce
+
+We need to change this because we have a different meaning of -n
+flag than upstream does. We use -nn in those cases.
+---
+ tests/TESTonce | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tests/TESTonce b/tests/TESTonce
+index 7026624..e348701 100755
+--- a/tests/TESTonce
++++ b/tests/TESTonce
+@@ -21,7 +21,7 @@ if ($^O eq 'MSWin32') {
+ else {
+     # we used to do this as a nice pipeline, but the problem is that $r fails to
+     # to be set properly if the tcpdump core dumps.
+-    $r = system "../tcpdump 2>/dev/null -n -t -r $input $options >NEW/$output";
++    $r = system "../tcpdump 2>/dev/null -nn -t -r $input $options >NEW/$output";
+     if($r != 0) {
+         # this means tcpdump failed.
+         open(OUTPUT, ">>"."NEW/$output") || die "fail to open $output\n";
+-- 
+2.13.5
+

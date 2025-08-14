@@ -1,0 +1,36 @@
+From f853995b93dd4c533c09ce67647b0cfd4dca6b9b Mon Sep 17 00:00:00 2001
+From: rpm-build <rpm-build>
+Date: Fri, 3 Feb 2017 09:43:03 +0100
+Subject: [PATCH 07/13] Don't print out we dropped root, we are always dropping
+ it
+
+---
+ tcpdump.c | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/tcpdump.c b/tcpdump.c
+index d9c7f7a..e4e0d89 100644
+--- a/tcpdump.c
++++ b/tcpdump.c
+@@ -609,8 +609,6 @@ droproot(const char *username, const char *chroot_dir)
+ 			int ret = capng_change_id(pw->pw_uid, pw->pw_gid, CAPNG_NO_FLAG);
+ 			if (ret < 0) {
+ 				fprintf(stderr, "error : ret %d\n", ret);
+-			} else {
+-				fprintf(stderr, "dropped privs to %s\n", username);
+ 			}
+ 		}
+ #else
+@@ -623,9 +621,6 @@ droproot(const char *username, const char *chroot_dir)
+ 				pcap_strerror(errno));
+ 			exit_tcpdump(1);
+ 		}
+-		else {
+-			fprintf(stderr, "dropped privs to %s\n", username);
+-		}
+ #endif /* HAVE_LIBCAP_NG */
+ 	}
+ 	else {
+-- 
+2.13.5
+
