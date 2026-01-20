@@ -2,12 +2,13 @@ Summary: A network traffic monitoring tool
 Name: tcpdump
 Epoch: 14
 Version: 4.9.2
-Release: 3%{?dist}
+Release: 3.1%{?dist}
 License: BSD with advertising
 URL: http://www.tcpdump.org
 Group: Applications/Internet
 Requires(pre): shadow-utils
 Requires: libpcap >= 14:1.5.3-10
+BuildRequires: gcc
 BuildRequires: automake sharutils openssl-devel libcap-ng-devel libpcap-devel git 
 
 Source0: http://www.tcpdump.org/release/%{name}-%{version}.tar.gz
@@ -89,6 +90,10 @@ exit 0
 %{_mandir}/man8/tcpdump.8*
 
 %changelog
+* Tue Jan 20 2026 Philippe Coval <philippe.coval@vates.tech> - 14:4.9.2-3.1
+- Add gcc to BuildRequires
+- Rebuild for openssl-3
+
 * Wed Nov 15 2017 Michal Ruprich - 14:4.9.2-3
 - Related: rhbz#1464390; build against latest libpcap
 
