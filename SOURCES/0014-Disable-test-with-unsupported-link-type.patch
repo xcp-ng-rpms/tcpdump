@@ -1,0 +1,26 @@
+From b7a5a890eb36c562ed0a5196985120348b35b4e0 Mon Sep 17 00:00:00 2001
+From: rpm-build <rpm-build>
+Date: Thu, 14 Sep 2017 12:56:02 +0200
+Subject: [PATCH] Disable test with unsupported link type
+
+---
+ tests/TESTLIST | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/tests/TESTLIST b/tests/TESTLIST
+index c0f6aff..0c4c2c9 100644
+--- a/tests/TESTLIST
++++ b/tests/TESTLIST
+@@ -503,7 +503,8 @@ juniper_es		juniper_es.pcap			juniper_es.out	-vvv -e
+ 
+ # bad packets from Yannick Formaggio
+ l2tp-avp-overflow	l2tp-avp-overflow.pcap		l2tp-avp-overflow.out	-v
+-pktap-heap-overflow	pktap-heap-overflow.pcap	pktap-heap-overflow.out	-v
++# This link type is not supported by RHEL7's libpcap
++# pktap-heap-overflow	pktap-heap-overflow.pcap	pktap-heap-overflow.out	-v
+ wb-oobr			wb-oobr.pcap			wb-oobr.out	-v
+ 
+ # bad packets from Bhargava Shastry
+-- 
+2.13.5
+

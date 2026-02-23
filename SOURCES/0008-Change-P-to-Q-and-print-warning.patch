@@ -1,0 +1,107 @@
+From 8a60760db57f496c2f893486f245b40560653ccd Mon Sep 17 00:00:00 2001
+From: rpm-build <rpm-build>
+Date: Mon, 20 Feb 2017 11:01:19 +0100
+Subject: [PATCH 08/13] Change -P to -Q and print warning
+
+Guy Harris points that -P is already taken by MacOS derived work and
+that the only remaining single-letter option is -Q (see GH #252). Fix
+some formatting while at it.
+---
+ tcpdump.1.in |  4 ++--
+ tcpdump.c    | 23 +++++++++++++----------
+ 2 files changed, 15 insertions(+), 12 deletions(-)
+
+diff --git a/tcpdump.1.in b/tcpdump.1.in
+index f233934..88b1266 100644
+--- a/tcpdump.1.in
++++ b/tcpdump.1.in
+@@ -74,7 +74,7 @@ tcpdump \- dump traffic on a network
+ .B \-\-number
+ ]
+ [
+-.B \-Q
++.B \-Q|\-P
+ .I in|out|inout
+ ]
+ .ti +8
+@@ -583,7 +583,7 @@ Note that the interface might be in promiscuous
+ mode for some other reason; hence, `-p' cannot be used as an abbreviation for
+ `ether host {local-hw-addr} or ether broadcast'.
+ .TP
+-.BI \-Q " direction"
++.BI \-Q|\-P " direction"
+ .PD 0
+ .TP
+ .BI \-\-direction= direction
+diff --git a/tcpdump.c b/tcpdump.c
+index e4e0d89..d7b094b 100644
+--- a/tcpdump.c
++++ b/tcpdump.c
+@@ -157,7 +157,7 @@ static int Jflag;			/* list available time stamp types */
+ static int jflag = -1;			/* packet time stamp source */
+ static int pflag;			/* don't go promiscuous */
+ #ifdef HAVE_PCAP_SETDIRECTION
+-static int Qflag = -1;			/* restrict captured packet by send/receive direction */
++static int PQflag = -1;			/* restrict captured packet by send/receive direction */
+ #endif
+ static int Uflag;			/* "unbuffered" output of dump files */
+ static int Wflag;			/* recycle output files after this number of files */
+@@ -509,12 +509,12 @@ show_devices_and_exit (void)
+ #endif
+ 
+ #ifdef HAVE_PCAP_SETDIRECTION
+-#define Q_FLAG "Q:"
++#define PQ_FLAG "P:Q:"
+ #else
+-#define Q_FLAG
++#define PQ_FLAG
+ #endif
+ 
+-#define SHORTOPTS "aAb" B_FLAG "c:C:d" D_FLAG "eE:fF:G:hHi:" I_FLAG j_FLAG J_FLAG "KlLm:M:nNOpq" Q_FLAG "r:s:StT:u" U_FLAG "vV:w:W:xXy:Yz:Z:#"
++#define SHORTOPTS "aAb" B_FLAG "c:C:d" D_FLAG "eE:fF:G:hHi:" I_FLAG j_FLAG J_FLAG "KlLm:M:nNOpq" PQ_FLAG "r:s:StT:u" U_FLAG "vV:w:W:xXy:Yz:Z:#"
+ 
+ /*
+  * Long options.
+@@ -1059,8 +1059,8 @@ open_interface(const char *device, netdissect_options *ndo, char *ebuf)
+ 			    pcap_statustostr(status));
+ 	}
+ #ifdef HAVE_PCAP_SETDIRECTION
+-	if (Qflag != -1) {
+-		status = pcap_setdirection(pc, Qflag);
++	if (PQflag != -1) {
++		status = pcap_setdirection(pc, PQflag);
+ 		if (status != 0)
+ 			error("%s: pcap_setdirection() failed: %s",
+ 			      device,  pcap_geterr(pc));
+@@ -1343,13 +1343,16 @@ main(int argc, char **argv)
+ 			break;
+ 
+ #ifdef HAVE_PCAP_SETDIRECTION
++                case 'P':
++                        fprintf(stderr, "Warning: -P switch is not compatible with the upstream version. You should use -Q instead.\n");
++                        /* Intentional fall through */
+ 		case 'Q':
+ 			if (ascii_strcasecmp(optarg, "in") == 0)
+-				Qflag = PCAP_D_IN;
++				PQflag = PCAP_D_IN;
+ 			else if (ascii_strcasecmp(optarg, "out") == 0)
+-				Qflag = PCAP_D_OUT;
++				PQflag = PCAP_D_OUT;
+ 			else if (ascii_strcasecmp(optarg, "inout") == 0)
+-				Qflag = PCAP_D_INOUT;
++				PQflag = PCAP_D_INOUT;
+ 			else
+ 				error("unknown capture direction `%s'", optarg);
+ 			break;
+@@ -2613,7 +2616,7 @@ print_usage(void)
+ "\t\t[ -i interface ]" j_FLAG_USAGE " [ -M secret ] [ --number ]\n");
+ #ifdef HAVE_PCAP_SETDIRECTION
+ 	(void)fprintf(stderr,
+-"\t\t[ -Q in|out|inout ]\n");
++"\t\t[ -Q|-P in|out|inout ]\n");
+ #endif
+ 	(void)fprintf(stderr,
+ "\t\t[ -r file ] [ -s snaplen ] ");
+-- 
+2.13.5
+
